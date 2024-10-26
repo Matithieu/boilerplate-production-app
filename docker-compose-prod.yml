@@ -1,0 +1,213 @@
+services:
+  postgres:
+    image: postgres:16.4
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    environment:
+      POSTGRES_DB: postgres
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    ports:
+      - "127.0.0.1:5432:5432"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready", "-d", "db_prod"]
+      interval: 30s
+      timeout: 60s
+      retries: 5
+      start_period: 80s
+
+  pgadmin4:
+    image: dpage/pgadmin4:8.11
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD}
+    depends_on:
+      - postgres
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+      - ./config/pgadmin/servers.json:/pgadmin4/servers.json
+      - ./config/pgadmin/.pgpass:/pgpass
+    restart: unless-stopped
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:25.0.6
+    environment:
+      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
+      KEYCLOAK_REALM: ${KEYCLOAK_REALM}
+      KC_HTTP_ENABLED: true
+      KC_HTTP_PORT: 8080
+      KC_HTTPS_PORT: 8180
+      KC_HTTPS_ENABLED: true
+      KC_HTTP_RELATIVE_PATH: /auth
+      KC_HOSTNAME: ${FULL_DOMAIN}/auth
+      KC_HOSTNAME_BACKCHANNEL_DYNAMIC: true
+      KC_PROXY_HEADERS: "xforwarded"
+      PROXY_ADDRESS_FORWARDING: true
+      OAUTH2_PROXY_CLIENT_SECRET: ${OAUTH2_PROXY_CLIENT_SECRET}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
+      HOSTNAME_PORT: ${HOSTNAME_PORT}
+      KC_HTTPS_CERTIFICATE_FILE: /opt/keycloak/conf/cert.pem
+      KC_HTTPS_CERTIFICATE_KEY_FILE: /opt/keycloak/conf/privkey.pem
+      #KC_LEGACY_OBSERVABILITY_INTERFACE: true # https://keycloak.discourse.group/t/setting-the-management-server-to-http-in-keycloak-25/26497/2
+      #KC_HOSTNAME_DEBUG: true
+      KC_METRICS_ENABLED: true
+    volumes:
+      - ./config/keycloak:/opt/keycloak/data/import
+      - ./certbot/conf/live/app.com/cert.pem:/opt/keycloak/conf/cert.pem
+      - ./certbot/conf/live/app.com/privkey.pem:/opt/keycloak/conf/privkey.pem
+    command: ["start", "--import-realm"]
+    restart: unless-stopped
+    healthcheck:
+      test: timeout 10s bash -c ':> /dev/tcp/localhost/8180'
+      interval: 60s
+      timeout: 30s
+      retries: 5
+      start_period: 25s
+
+  backend:
+    build:
+      dockerfile: App-API/Dockerfile
+    env_file:
+      - ./App-API/.env
+    environment:
+      - FULL_DOMAIN_: ${FULL_DOMAIN}
+      - HOSTNAME: ${HOSTNAME}
+      - REDIRECT_URI: https://${HOSTNAME_PORT}/oauth2/callback
+      - STRIPE_API_KEY: ${STRIPE_API_KEY}
+      - STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET}
+      - STRIPE_PRICE_ID_FREE: ${STRIPE_PRICE_ID_FREE}
+      - STRIPE_PRICE_ID_BASIC: ${STRIPE_PRICE_ID_BASIC}
+      - STRIPE_PRICE_ID_PREMIUM: ${STRIPE_PRICE_ID_PREMIUM}
+      - KEYCLOAK_SERVER_URL: http://keycloak:8080/auth
+      - KEYCLOAK_REALM: ${KEYCLOAK_REALM}
+      - KEYCLOAK_ADMIN_USERNAME: ${KEYCLOAK_ADMIN}
+      - KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
+      - KEYCLOAK_REGISTER_CLIENT_ID: ${KEYCLOAK_REGISTER_CLIENT_ID}
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+      keycloak:
+        condition: service_healthy
+    restart: unless-stopped
+
+  nginx:
+    build:
+      context: .
+      dockerfile: ./App-Front/Dockerfile
+      args:
+        - CONFIG_PATH=./config/nginx/nginx.conf
+    ports:
+      - "80:80"
+      - "443:443"
+    env_file:
+      - ./App-Front/.env
+    environment:
+      - VITE_PROXY_BASE_URL=${FULL_DOMAIN}
+      - STRIPE_PRICE_ID_FREE=${STRIPE_PRICE_ID_FREE}
+      - STRIPE_PRICE_ID_BASIC=${STRIPE_PRICE_ID_BASIC}
+      - STRIPE_PRICE_ID_PREMIUM=${STRIPE_PRICE_ID_PREMIUM}
+    volumes:
+      - ./config/nginx/nginx.conf:/etc/nginx/conf.d/default.conf
+      - certs:/etc/nginx/certs
+      - ./certbot/conf/:/etc/letsencrypt/:rw
+      - ./certbot/www/:/var/www/certbot/:ro
+    depends_on:
+      - backend
+      - oauth2-proxy
+    restart: unless-stopped
+
+  # To renew the certificates, it will stops at the start of the container
+  certbot:
+    image: certbot/certbot:latest
+    volumes:
+      - certs:/etc/letsencrypt/:rw
+      - ./certbot/www/:/var/www/certbot/:rw
+      - ./certbot/conf/:/etc/letsencrypt/:rw
+    restart: unless-stopped
+
+  redis:
+    image: redis
+    restart: unless-stopped
+
+  oauth2-proxy:
+    image: quay.io/oauth2-proxy/oauth2-proxy:v7.6.0
+    environment:
+      OAUTH2_PROXY_PROVIDER: "keycloak-oidc"
+      OAUTH2_PROXY_CLIENT_ID: ${KEYCLOAK_REGISTER_CLIENT_ID}
+      OAUTH2_PROXY_REDIRECT_URL: "https://${HOSTNAME_PORT}/oauth2/callback"
+      # Find the client secret in realm-export.json
+      OAUTH2_PROXY_CLIENT_SECRET: ${OAUTH2_PROXY_CLIENT_SECRET}
+      OAUTH2_PROXY_OIDC_ISSUER_URL: "https://keycloak:8180/auth/realms/${KEYCLOAK_REALM}"
+      OAUTH2_PROXY_EMAIL_DOMAINS: "*"
+      OAUTH2_PROXY_BACKEND_LOGOUT_URL: "https://keycloak:8180/auth/realms/${KEYCLOAK_REALM}/protocol/openid-connect/logout?post_logout_redirect_uri=https%3A%2F%2F${HOSTNAME}&id_token_hint={id_token}"
+      OAUTH2_PROXY_COOKIE_SECRET: "${OAUTH2_PROXY_COOKIE_SECRET}"
+      OAUTH2_PROXY_REVERSE_PROXY: "true"
+      OAUTH2_PROXY_COOKIE_SECURE: "true"
+      OAUTH2_PROXY_SAME_SITE: "strict"
+      OAUTH2_PROXY_COOKIE_REFRESH: "168h" # 7 days
+      OAUTH2_PROXY_COOKIE_EXPIRE: "4320h" # 180 days
+      OAUTH2_PROXY_COOKIE_DOMAIN: ${HOSTNAME}
+      OAUTH2_PROXY_HTTP_ADDRESS: http://0.0.0.0:4180
+      OAUTH2_PROXY_UPSTREAMS: "http://backend:8080/"
+      OAUTH2_PROXY_SESSION_STORE_TYPE: "redis"
+      OAUTH2_PROXY_REDIS_CONNECTION_URL: "redis://redis:6379"
+      OAUTH2_PROXY_PASS_AUTHORIZATION_HEADER: "true"
+      OAUTH2_PROXY_PASS_ACCESS_TOKEN: "true"
+      OAUTH2_PROXY_CODE_CHALLENGE_METHOD: "S256"
+      OAUTH2_PROXY_LOG_LEVEL: debug
+      OAUTH2_PROXY_AUTH_LOGGING_FORMAT: "{{.Client}} - {{.Username}} [{{.Timestamp}}] [{{.Status}}] {{.Message}}"
+      OAUTH2_PROXY_REQUEST_LOGGING_FORMAT: "{{.Client}} - {{.Username}} [{{.Timestamp}}] {{.Host}} {{.RequestMethod}} {{.Upstream}} {{.RequestURI}} {{.Protocol}} {{.UserAgent}} {{.StatusCode}} {{.ResponseSize}} {{.RequestDuration}}"
+      OAUTH2_PROXY_STANDARD_LOGGING_FORMAT: "[{{.Timestamp}}] [{{.File}}] {{.Message}}"
+      OAUTH2_PROXY_SSL_INSECURE_SKIP_VERIFY: "true"
+    command:
+      - --whitelist-domain=${HOSTNAME}
+      - --whitelist-domain=${HOSTNAME_PORT}
+      - --whitelist-domain=localhost
+      - --whitelist-domain=localhost:5173
+      - --whitelist-domain=localhost:443
+      - --whitelist-domain=keycloak:8180
+      - --insecure-oidc-allow-unverified-email=true
+      - --prefer-email-to-user=true
+      - --set-xauthrequest=true
+      - --skip-provider-button=true
+      - --insecure-oidc-skip-issuer-verification=true
+      - --skip-auth-route=/api/v1/stripe/webhook
+      - --skip-auth-route=GET=/api/v1/register
+    depends_on:
+      keycloak:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus
+    volumes:
+      - prometheus_data:/prometheus
+      - ./config/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./config/grafana/provisioning:/etc/grafana/provisioning
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GF_SECURITY_ADMIN_USER}
+      - GF_SECURITY_ADMIN_PASSWORD=${GF_SECURITY_ADMIN_PASSWORD}
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_SERVER_ROOT_URL=%(protocol)s://%(domain)s:%(http_port)s/grafana/
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  pgadmin_data:
+  certs:
+  grafana_data:
+  prometheus_data:

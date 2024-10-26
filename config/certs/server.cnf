@@ -1,0 +1,20 @@
+[ req ]
+distinguished_name = req_distinguished_name
+x509_extensions = v3_req
+prompt = no
+
+[ req_distinguished_name ]
+C = FR
+ST = State
+L = Paris
+O = matithieu
+OU = OrganizationalUnit
+CN = matithieu.com
+
+[ v3_req ]
+subjectAltName = @alt_names
+
+[ alt_names ]
+DNS.1 = matithieu.com
+DNS.2 = www.matithieu.com
+DNS.3 = keycloak

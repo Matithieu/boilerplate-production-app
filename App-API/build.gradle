@@ -1,0 +1,66 @@
+plugins {
+    id 'java'
+    id 'org.springframework.boot' version '3.2.1'
+    id 'io.spring.dependency-management' version '1.1.4'
+}
+
+group = 'com.example'
+version = '0.0.1-SNAPSHOT'
+
+java {
+    sourceCompatibility = '21'
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    // Spring
+    implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+    implementation 'org.springframework.boot:spring-boot-starter-oauth2-resource-server'
+    implementation 'org.springframework.boot:spring-boot-starter-web'
+    implementation 'org.springframework.boot:spring-boot-starter-security'
+
+    // Stats
+    implementation 'org.springframework.boot:spring-boot-starter-actuator'
+    implementation 'io.micrometer:micrometer-registry-prometheus'
+
+    // Jwt
+    implementation 'io.jsonwebtoken:jjwt:0.9.1'
+
+    // Keycloak
+    implementation 'org.keycloak:keycloak-core:25.0.6'
+    implementation 'org.keycloak:keycloak-policy-enforcer:25.0.6'
+    implementation 'org.keycloak:keycloak-admin-client:25.0.6'
+
+    // Stripe
+    implementation 'com.stripe:stripe-java:25.13.0'
+
+    // GSON
+    implementation 'com.google.code.gson:gson:2.11.0'
+
+    // Hibernate JSONB
+    implementation 'io.hypersistence:hypersistence-utils-hibernate-62:3.8.2'
+
+    // Lombok
+    compileOnly 'org.projectlombok:lombok:1.18.30'
+    annotationProcessor 'org.projectlombok:lombok:1.18.30'
+
+    // Caffeine
+    implementation 'com.github.ben-manes.caffeine:caffeine:3.1.4'
+
+    // Utils
+    implementation 'org.apache.commons:commons-lang3:3.0'
+
+    // Test
+    runtimeOnly 'org.postgresql:postgresql'
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testImplementation 'org.springframework.security:spring-security-test'
+    testCompileOnly 'org.projectlombok:lombok:1.18.30'
+    testAnnotationProcessor 'org.projectlombok:lombok:1.18.30'
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
+}
