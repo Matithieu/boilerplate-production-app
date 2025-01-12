@@ -30,9 +30,23 @@ services:
       - ./config/pgadmin/.pgpass:/pgpass
     restart: unless-stopped
 
+  keycloak-db:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: ${KEYCLOAK_DB}
+      POSTGRES_USER: ${KEYCLOAK_DB_USER}
+      POSTGRES_PASSWORD: ${KEYCLOAK_DB_PASSWORD}
+      PGPORT: 5433
+    volumes:
+      - keycloak-db:/var/lib/postgresql/data
+
   keycloak:
     image: quay.io/keycloak/keycloak:25.0.6
     environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://keycloak-db:5433/${KEYCLOAK_DB}
+      KC_DB_USERNAME: ${KEYCLOAK_DB_USER}
+      KC_DB_PASSWORD: ${KEYCLOAK_DB_PASSWORD}
       KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN}
       KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
       KEYCLOAK_REALM: ${KEYCLOAK_REALM}
@@ -204,6 +218,7 @@ services:
 volumes:
   postgres_data:
   pgadmin_data:
+  keycloak-db:
   certs:
   grafana_data:
   prometheus_data:
