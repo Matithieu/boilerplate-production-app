@@ -1,15 +1,15 @@
 {
-    "Servers": {
-      "1": {
-        "Name": "Local PostgreSQL",
-        "Group": "Servers",
-        "Host": "postgres",
-        "Port": 5432,
-        "MaintenanceDB": "postgres",
-        "Username": "postgres",
-        "PassFile": "/pgpass",
-        "SSLMode": "prefer"
-      }
+  "Servers": {
+    "1": {
+      "Name": "postgres",
+      "Group": "Servers",
+      "Host": "postgres",
+      "Port": 5432,
+      "MaintenanceDB": "postgres",
+      "Username": "postgres",
+      "SSLMode": "prefer",
+      "Timeout": 10,
+      "Comment": "Local BoilerPlate database"
     }
   }
-  
+}

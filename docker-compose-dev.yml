@@ -4,13 +4,13 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     environment:
-      POSTGRES_DB: postgres
+      POSTGRES_DB: ${POSTGRES_DB}
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     ports:
       - "5432:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready", "-d", "db_prod"]
+      test: ["CMD-SHELL", "pg_isready", "-U", "${POSTGRES_USER}"]
       interval: 30s
       timeout: 60s
       retries: 5
@@ -23,12 +23,12 @@ services:
     environment:
       PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL}
       PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD}
+      SCRIPT_NAME: /pgadmin4
     depends_on:
       - postgres
     volumes:
       - pgadmin_data:/var/lib/pgadmin
       - ./config/pgadmin/servers.json:/pgadmin4/servers.json
-      - ./config/pgadmin/.pgpass:/pgpass
 
   keycloak-db:
     image: postgres:16
@@ -59,12 +59,12 @@ services:
       KC_HOSTNAME_BACKCHANNEL_DYNAMIC: true
       KC_PROXY_HEADERS: "xforwarded"
       PROXY_ADDRESS_FORWARDING: true
+      KC_HOSTNAME_DEBUG: true
+      KC_METRICS_ENABLED: true
       OAUTH2_PROXY_CLIENT_SECRET: ${OAUTH2_PROXY_CLIENT_SECRET}
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
       HOSTNAME_PORT: ${HOSTNAME_PORT}
-      KC_HOSTNAME_DEBUG: true
-      KC_METRICS_ENABLED: true
       KEYCLOAK_ADMIN_CLI: ${KEYCLOAK_ADMIN_CLI}
       KEYCLOAK_ADMIN_CLI_PASSWORD: ${KEYCLOAK_ADMIN_CLI_PASSWORD}
     ports:
@@ -85,16 +85,25 @@ services:
     env_file:
       - ./App-API/.env
     environment:
-      - SERVER_URL=http://keycloak:8080/auth
-      - HOSTNAME=${HOSTNAME}
-      - FULL_DOMAIN=${FULL_DOMAIN}
-      - REDIRECT_URI=https://${HOSTNAME_PORT}/oauth2/callback
-      - REGISTER_CLIENT_ID=${KEYCLOAK_CLIENT_ID}
-      - STRIPE_API_KEY=${STRIPE_API_KEY}
-      - STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET}
-      - STRIPE_PRICE_ID_FREE=${STRIPE_PRICE_ID_FREE}
-      - STRIPE_PRICE_ID_BASIC=${STRIPE_PRICE_ID_BASIC}
-      - STRIPE_PRICE_ID_PREMIUM=${STRIPE_PRICE_ID_PREMIUM}
+      HOSTNAME: ${HOSTNAME}
+      FULL_DOMAIN: ${FULL_DOMAIN}
+      # Postgres Configuration
+      POSTGRES_DATA_SOURCE_URL: ${POSTGRES_DATA_SOURCE_URL}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      # Keycloak Configuration
+      KEYCLOAK_REALM: ${KEYCLOAK_REALM}
+      KEYCLOAK_URL: ${KEYCLOAK_URL}
+      KEYCLOAK_ADMIN_CLI_REALM: ${KEYCLOAK_ADMIN_CLI_REALM}
+      KEYCLOAK_ADMIN_CLI: ${KEYCLOAK_ADMIN_CLI}
+      KEYCLOAK_ADMIN_CLI_PASSWORD: ${KEYCLOAK_ADMIN_CLI_PASSWORD}
+      REDIRECT_URI: https://${HOSTNAME_PORT}/oauth2/callback
+      REGISTER_CLIENT_ID: ${KEYCLOAK_CLIENT_ID}
+      STRIPE_API_KEY: ${STRIPE_API_KEY}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET}
+      STRIPE_PRICE_ID_FREE: ${STRIPE_PRICE_ID_FREE}
+      STRIPE_PRICE_ID_BASIC: ${STRIPE_PRICE_ID_BASIC}
+      STRIPE_PRICE_ID_PREMIUM: ${STRIPE_PRICE_ID_PREMIUM}
     depends_on:
       postgres:
         condition: service_healthy
@@ -122,9 +131,9 @@ services:
       OAUTH2_PROXY_REDIRECT_URL: "https://${HOSTNAME_PORT}/oauth2/callback"
       # Find the client secret in realm-export.json
       OAUTH2_PROXY_CLIENT_SECRET: ${OAUTH2_PROXY_CLIENT_SECRET}
-      OAUTH2_PROXY_OIDC_ISSUER_URL: "http://keycloak:8080/auth/realms/${KEYCLOAK_REALM}"
+      OAUTH2_PROXY_OIDC_ISSUER_URL: "${KEYCLOAK_URL}/realms/${KEYCLOAK_REALM}"
       OAUTH2_PROXY_EMAIL_DOMAINS: "*"
-      OAUTH2_PROXY_BACKEND_LOGOUT_URL: "http://keycloak:8080/auth/realms/${KEYCLOAK_REALM}/protocol/openid-connect/logout?post_logout_redirect_uri=https%3A%2F%2F${HOSTNAME}&id_token_hint={id_token}"
+      OAUTH2_PROXY_BACKEND_LOGOUT_URL: "${KEYCLOAK_URL}/realms/${KEYCLOAK_REALM}/protocol/openid-connect/logout?post_logout_redirect_uri=https%3A%2F%2F${HOSTNAME}&id_token_hint={id_token}"
       OAUTH2_PROXY_COOKIE_SECRET: "${OAUTH2_PROXY_COOKIE_SECRET}"
       OAUTH2_PROXY_REVERSE_PROXY: "true"
       OAUTH2_PROXY_COOKIE_SECURE: "true"
@@ -180,10 +189,10 @@ services:
       - grafana_data:/var/lib/grafana
       - ./config/grafana/provisioning:/etc/grafana/provisioning
     environment:
-      - GF_SECURITY_ADMIN_USER=${GF_SECURITY_ADMIN_USER}
-      - GF_SECURITY_ADMIN_PASSWORD=${GF_SECURITY_ADMIN_PASSWORD}
-      - GF_USERS_ALLOW_SIGN_UP=false
-      - GF_SERVER_ROOT_URL=%(protocol)s://%(domain)s:%(http_port)s/grafana/
+      GF_SECURITY_ADMIN_USER: ${GF_SECURITY_ADMIN_USER}
+      GF_SECURITY_ADMIN_PASSWORD: ${GF_SECURITY_ADMIN_PASSWORD}
+      GF_USERS_ALLOW_SIGN_UP: false
+      GF_SERVER_ROOT_URL: "%(protocol)s://%(domain)s:%(http_port)s/grafana/"
     depends_on:
       prometheus:
         condition: service_started
