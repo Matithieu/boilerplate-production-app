@@ -11,19 +11,19 @@ public class KeycloakSecurityUtil {
 
     Keycloak keycloak;
 
-    @Value("${KEYCLOAK_SERVER_URL}")
+    @Value("${KEYCLOAK_URL}")
     private String serverUrl;
 
     @Value("${KEYCLOAK_REALM}")
     private String realm;
 
-    @Value("${KEYCLOAK_REGISTER_CLIENT_ID}")
+    @Value("${KEYCLOAK_CLIENT_ID}")
     private String clientId;
 
     @Value("${KEYCLOAK_GRANT_TYPE}")
     private String grantType;
 
-    @Value("${KEYCLOAK_ADMIN_USERNAME}")
+    @Value("${KEYCLOAK_ADMIN_CLI}")
     private String username;
 
     @Value("${KEYCLOAK_ADMIN_PASSWORD}")
