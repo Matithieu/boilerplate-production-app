@@ -214,29 +214,39 @@ reload() {
     SERVICE=$2
 
     echo "Building the Docker image for $SERVICE..."
-    if docker compose -f "docker-compose-$ENV.yml" stop "$SERVICE"; then
+    if docker compose -f "docker-compose-$ENV.yml" build "$SERVICE"; then
         echo -e "${GREEN}Docker image built successfully.${NC}"
     else
         echo -e "${RED}Failed to build Docker image.${NC}"
         exit 1
     fi
 
-    echo "Stopping the $SERVICE container..."
-    if docker compose -f "docker-compose-$ENV.yml" build "$SERVICE"; then
-        echo -e "${GREEN}Container stopped successfully.${NC}"
+    echo "Starting a new instance of $SERVICE container with the updated image..."
+    if docker compose -f "docker-compose-$ENV.yml" up -d --scale "$SERVICE"=2 --no-recreate; then
+        echo -e "${GREEN}New instance of $SERVICE started successfully!${NC}"
     else
-        echo -e "${RED}Failed to stop container.${NC}"
+        echo -e "${RED}Failed to start a new instance of $SERVICE.${NC}"
         exit 1
     fi
 
-    echo "Starting a new $SERVICE container with the updated image..."
-    if docker compose -f "docker-compose-$ENV.yml" up -d "$SERVICE"; then
-        echo -e "${GREEN}Container started successfully!${NC}"
+    echo "Waiting for the new container to stabilize..."
+    if [ "$ENV" = "prod" ]; then
+        sleep 30
     else
-        echo -e "${RED}Failed to start container.${NC}"
+        sleep 10
+    fi
+
+    echo "Stopping the old $SERVICE container..."
+    if docker compose -f "docker-compose-$ENV.yml" up -d --scale "$SERVICE"=1; then
+        echo -e "${GREEN}Old instance of $SERVICE stopped successfully.${NC}"
+    else
+        echo -e "${RED}Failed to stop the old instance of $SERVICE.${NC}"
         exit 1
     fi
+
+    echo "Reload of $SERVICE completed with zero downtime!"
 }
+
 
 # Check the arguments passed to the script
 case "$1" in
@@ -277,20 +287,20 @@ generate_certificates)
     generate_certificates
     ;;
 reload)
-    if [ "$2" = "dev" ] || [ "$2" = "prod" ]; then
-        if [ -n "$3" ]; then
-            reload "$2" "$3"
+    ENV="$1"
+    SERVICE="$2"
+    if [[ "$ENV" == "dev" || "$ENV" == "prod" ]]; then
+        if [[ -n "$SERVICE" ]]; then
+            reload "$ENV" "$SERVICE"
         else
-            echo -e "${YELLOW}Usage: ./devcli.sh reload {dev|prod} {service_name}${NC}"
+            echo -e "${RED}Error: Service name not specified.${NC}"
+            help
             exit 1
         fi
     else
-        echo -e "${YELLOW}Usage: ./devcli.sh reload {dev|prod} {service_name}${NC}"
+        echo -e "${RED}Error: Environment not specified or invalid. Use 'dev' or 'prod'.${NC}"
+        help
         exit 1
     fi
-    ;;
-*)
-    echo -e "${YELLOW}Usage: ./devcli.sh {start|stop|insert_db|install|remove_volumes|create_env|init|reload} {dev|prod} {service_name}${NC}"
-    exit 1
     ;;
 esac
