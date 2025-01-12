@@ -2466,16 +2466,17 @@
   },
   "users": [
     {
-      "username": "local-admin@mail.com",
+      "id": "ebb590eb-097e-412a-8187-e5a5456ea875",
+      "username": "${KEYCLOAK_ADMIN_CLI}",
       "enabled": true,
       "emailVerified": true,
       "firstName": "Rootus",
       "lastName": "Adminus",
-      "email": "local-admin@mail.com",
+      "email": "${KEYCLOAK_ADMIN_CLI}",
       "credentials": [
         {
           "type": "password",
-          "value": "password"
+          "value": "${KEYCLOAK_ADMIN_CLI_PASSWORD}"
         }
       ],
       "realmRoles": ["default-roles-boilerplate-production-app", "verified"],
