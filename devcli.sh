@@ -19,6 +19,27 @@ if [ -f .env ]; then
     set +a
 fi
 
+############################################
+#               FUNCTIONS                  #
+############################################
+
+# --- help function ---
+help() {
+    echo -e "${GREEN}Usage: ./devcli.sh [command] [options]${NC}"
+    echo ""
+    echo "Available commands:"
+    echo -e "  ${YELLOW}start {dev|prod}${NC}          Start docker containers for the chosen environment."
+    echo -e "  ${YELLOW}stop {dev|prod}${NC}           Stop docker containers for the chosen environment."
+    echo -e "  ${YELLOW}install${NC}                   Clone or pull the repositories specified in .env."
+    echo -e "  ${YELLOW}remove_volumes {dev|prod}${NC} Remove volumes for the chosen environment."
+    echo -e "  ${YELLOW}create_env${NC}                Create .env files from template.env in App-API and App-Front."
+    echo -e "  ${YELLOW}init${NC}                     Install repos, create env files, insert DB, and generate certificates."
+    echo -e "  ${YELLOW}generate_certificates${NC}     Generate SSL/TLS certificates for local development."
+    echo -e "  ${YELLOW}reload {dev|prod} <service>${NC} Zero-downtime reload for a specific service in a chosen environment."
+    echo -e "  ${YELLOW}help${NC}                      Show this help message."
+    echo ""
+}
+
 # Function to generate SSL/TLS certificates and convert to JKS for local development
 # Might need to run this script with sudo
 generate_certificates() {
@@ -28,14 +49,12 @@ generate_certificates() {
     DAYS_VALID=365
     CONFIG_FILE="./config/certs/server.cnf"
     OUTPUT_DIR="./config/certs"
-    GREEN='\033[0;32m'
-    NC='\033[0m' # No Color
 
     # Create the output directory if it doesn't exist
-    mkdir -p $OUTPUT_DIR
+    mkdir -p "$OUTPUT_DIR"
 
     # Create the configuration file
-    cat >$CONFIG_FILE <<EOL
+    cat >"$CONFIG_FILE" <<EOL
 [ req ]
 distinguished_name = req_distinguished_name
 x509_extensions = v3_req
@@ -59,22 +78,22 @@ DNS.3 = keycloak
 EOL
 
     # Private Key And CSR
-    openssl req -newkey rsa:2048 -nodes -keyout $OUTPUT_DIR/server.key -out $OUTPUT_DIR/server.csr -config $CONFIG_FILE
+    openssl req -newkey rsa:2048 -nodes -keyout "$OUTPUT_DIR/server.key" -out "$OUTPUT_DIR/server.csr" -config "$CONFIG_FILE"
 
     # CSR -> CRT
-    openssl x509 -req -days $DAYS_VALID -in $OUTPUT_DIR/server.csr -signkey $OUTPUT_DIR/server.key -out $OUTPUT_DIR/server.crt -extensions v3_req -extfile $CONFIG_FILE
+    openssl x509 -req -days "$DAYS_VALID" -in "$OUTPUT_DIR/server.csr" -signkey "$OUTPUT_DIR/server.key" -out "$OUTPUT_DIR/server.crt" -extensions v3_req -extfile "$CONFIG_FILE"
 
     # Key -> PKCS12
-    openssl pkcs12 -export -in $OUTPUT_DIR/server.crt -inkey $OUTPUT_DIR/server.key -out $OUTPUT_DIR/server.p12 -name $ALIAS -passout pass:$KEYSTORE_PASSWORD
+    openssl pkcs12 -export -in "$OUTPUT_DIR/server.crt" -inkey "$OUTPUT_DIR/server.key" -out "$OUTPUT_DIR/server.p12" -name "$ALIAS" -passout pass:"$KEYSTORE_PASSWORD"
 
     # PKCS12 -> JKS
-    keytool -importkeystore -deststorepass $KEYSTORE_PASSWORD -destkeypass $KEYSTORE_PASSWORD -destkeystore $OUTPUT_DIR/keystore.jks -srckeystore $OUTPUT_DIR/server.p12 -srcstoretype PKCS12 -srcstorepass $KEYSTORE_PASSWORD -alias $ALIAS
+    keytool -importkeystore -deststorepass "$KEYSTORE_PASSWORD" -destkeypass "$KEYSTORE_PASSWORD" -destkeystore "$OUTPUT_DIR/keystore.jks" -srckeystore "$OUTPUT_DIR/server.p12" -srcstoretype PKCS12 -srcstorepass "$KEYSTORE_PASSWORD" -alias "$ALIAS" -noprompt
 
     # Combine the CRT and KEY into a PEM file
-    cat $OUTPUT_DIR/server.crt $OUTPUT_DIR/server.key >$OUTPUT_DIR/server.pem
+    cat "$OUTPUT_DIR/server.crt" "$OUTPUT_DIR/server.key" >"$OUTPUT_DIR/server.pem"
 
     # Give the correct permissions to the files
-    chmod 644 $OUTPUT_DIR/server.crt $OUTPUT_DIR/server.key $OUTPUT_DIR/server.pem $OUTPUT_DIR/server.p12
+    chmod 644 "$OUTPUT_DIR/server.crt" "$OUTPUT_DIR/server.key" "$OUTPUT_DIR/server.pem" "$OUTPUT_DIR/server.p12"
 
     echo -e "${GREEN}SSL/TLS certificates generated successfully!${NC}"
 }
@@ -97,6 +116,7 @@ start() {
     fi
 }
 
+# Function to stop docker containers
 stop() {
     if [ -z "$1" ]; then
         echo -e "${RED}No environment specified. Please use 'dev' or 'prod'.${NC}"
@@ -193,6 +213,12 @@ create_env() {
     done
 }
 
+# Dummy function to show how you might insert a DB if needed (not defined in original script)
+insert_db() {
+    # Example placeholder function
+    echo "Inserting DB placeholder for $1..."
+}
+
 # Function to initialize the environment
 init() {
     echo "Initializing the environment..."
@@ -203,15 +229,11 @@ init() {
     echo -e "${GREEN}Environment initialized successfully!${NC}"
 }
 
-# Function to reload a specific service container
+# Function to reload a specific service container (zero downtime)
 reload() {
-    if [ -z "$1" ] || [ -z "$2" ]; then
-        echo -e "${RED}No environment or service specified. Please use 'dev' or 'prod' and specify a service name.${NC}"
-        exit 1
-    fi
-
-    ENV=$1
-    SERVICE=$2
+    # $1 -> environment (dev|prod), $2 -> service name
+    ENV="$1"
+    SERVICE="$2"
 
     echo "Building the Docker image for $SERVICE..."
     if docker compose -f "docker-compose-$ENV.yml" build "$SERVICE"; then
@@ -247,60 +269,72 @@ reload() {
     echo "Reload of $SERVICE completed with zero downtime!"
 }
 
+############################################
+#               MAIN CASE                  #
+############################################
 
-# Check the arguments passed to the script
+# If no arguments or "help" is passed, show help and exit
+if [ "$#" -lt 1 ] || [ "$1" = "help" ]; then
+    help
+    exit 0
+fi
+
 case "$1" in
-start)
-    if [ "$2" = "dev" ] || [ "$2" = "prod" ]; then
-        start "$2"
-    else
-        echo -e "${YELLOW}Usage: ./devcli.sh start {dev|prod}${NC}"
-        exit 1
-    fi
-    ;;
-stop)
-    if [ "$2" = "dev" ] || [ "$2" = "prod" ]; then
-        stop "$2"
-    else
-        echo -e "${YELLOW}Usage: ./devcli.sh stop {dev|prod}${NC}"
-        exit 1
-    fi
-    ;;
-install)
-    install
-    ;;
-remove_volumes)
-    if [ "$2" = "dev" ] || [ "$2" = "prod" ]; then
-        remove_volumes "$2"
-    else
-        echo -e "${YELLOW}Usage: ./devcli.sh remove_volumes {dev|prod}${NC}"
-        exit 1
-    fi
-    ;;
-create_env)
-    create_env
-    ;;
-init)
-    init
-    ;;
-generate_certificates)
-    generate_certificates
-    ;;
-reload)
-    ENV="$1"
-    SERVICE="$2"
-    if [[ "$ENV" == "dev" || "$ENV" == "prod" ]]; then
-        if [[ -n "$SERVICE" ]]; then
-            reload "$ENV" "$SERVICE"
+    start)
+        # Usage: ./devcli.sh start dev|prod
+        if [ "$2" = "dev" ] || [ "$2" = "prod" ]; then
+            start "$2"
         else
-            echo -e "${RED}Error: Service name not specified.${NC}"
-            help
+            echo -e "${YELLOW}Usage: ./devcli.sh start {dev|prod}${NC}"
             exit 1
         fi
-    else
-        echo -e "${RED}Error: Environment not specified or invalid. Use 'dev' or 'prod'.${NC}"
+        ;;
+    stop)
+        # Usage: ./devcli.sh stop dev|prod
+        if [ "$2" = "dev" ] || [ "$2" = "prod" ]; then
+            stop "$2"
+        else
+            echo -e "${YELLOW}Usage: ./devcli.sh stop {dev|prod}${NC}"
+            exit 1
+        fi
+        ;;
+    install)
+        install
+        ;;
+    remove_volumes)
+        # Usage: ./devcli.sh remove_volumes dev|prod
+        if [ "$2" = "dev" ] || [ "$2" = "prod" ]; then
+            remove_volumes "$2"
+        else
+            echo -e "${YELLOW}Usage: ./devcli.sh remove_volumes {dev|prod}${NC}"
+            exit 1
+        fi
+        ;;
+    create_env)
+        create_env
+        ;;
+    init)
+        init
+        ;;
+    generate_certificates)
+        generate_certificates
+        ;;
+    reload)
+        # Usage: ./devcli.sh reload dev|prod serviceName
+        if [ -z "$2" ] || [ -z "$3" ]; then
+            echo -e "${RED}Usage: ./devcli.sh reload {dev|prod} <service-name>${NC}"
+            exit 1
+        fi
+        if [ "$2" = "dev" ] || [ "$2" = "prod" ]; then
+            reload "$2" "$3"
+        else
+            echo -e "${RED}Error: Environment not specified or invalid. Use 'dev' or 'prod'.${NC}"
+            exit 1
+        fi
+        ;;
+    *)
+        # If command doesn't match any of the above, show help.
         help
         exit 1
-    fi
-    ;;
+        ;;
 esac
